@@ -42,7 +42,7 @@ object CharacterRepo {
   val humans = List(
     Human(
       id = "1000",
-      name = Some("Luke Skywalker"),
+      name = Some("Ahmed Magdy"),
       friends = List("1002", "1003", "2000", "2001"),
       appearsIn = List(Episode.NEWHOPE, Episode.EMPIRE, Episode.JEDI),
       homePlanet = Some("Tatooine")),

@@ -19,8 +19,6 @@ class Model(_id: String, _name: String) {
 object Model {
 
   def apply(id: String, name: String): Model = new Model(id, name)
-//  implicit val modelDecoder: Decoder[Model] =
-//    Decoder.forProduct2("id", "name")(Model.apply)
 
   implicit val unmarshaller
     : Unmarshaller[HttpEntity, Either[circe.Error, List[Model]]] = {
@@ -40,15 +38,15 @@ object Model {
               id <- c.get[String]("id")
               name <- c.get[String]("name")
               roles <- c.get[List[EntityRole]]("roles")
-              sublists <- c.get[List[Sublist]]("sublists")
-            } yield ListEntity(id, name, roles, sublists)
+              subLists <- c.get[List[Sublist]]("subLists")
+            } yield ListEntity(id, name, roles, subLists)
           case _ =>
             for {
               id <- c.get[String]("id")
               name <- c.get[String]("name")
               roles <- c.get[List[EntityRole]]("roles")
             } yield SimpleEntity(id, name, roles)
-        }).getOrElse(Left(DecodingFailure("Not a valid KeyValueRow", List())))
+        }).getOrElse(Left(DecodingFailure("Not a valid model!", List())))
     }
 
     Unmarshaller.byteStringUnmarshaller.map {
@@ -59,14 +57,14 @@ object Model {
   }
 }
 
-case class EntityRole(id: String, name: String)
+case class EntityRole(override val id: String, override val name: String)
+    extends Model(id, name)
 
-case class Sublist(id: String, canonicalForm: String, list: List[String])
+case class Sublist(id: Int, canonicalForm: String, list: List[String])
 
 sealed class Entity(_id: String, _name: String, _roles: List[EntityRole])
     extends Model(_id, _name) {
-  val roles = this._roles
-
+  val roles: List[EntityRole] = this._roles
 }
 
 case class Intent(override val id: String,
@@ -84,39 +82,15 @@ case class ListEntity(override val id: String,
                       override val roles: List[EntityRole],
                       sublists: List[Sublist])
     extends Entity(id, name, roles)
-//
-//object ParentEntityType extends Enumeration {
-//  val COMPOSITE, HIERARCHICAL = Value
-//}
-//
-//case class ParentEntity(id: String,
-//                        name: String,
-//                        roles: List[EntityRole],
-//                        entityType: ParentEntityType.Value,
-//                        children: List[Entity])
-//    extends Entity
 
-//object Model {
-//
-//  implicit val unmarshaller
-//    : Unmarshaller[HttpEntity, Either[circe.Error, List[Model]]] =
-//    Unmarshaller.byteStringUnmarshaller.map {
-//      case ByteString.empty ⇒ throw Unmarshaller.NoContentException
-//      case data ⇒
-//        parser.decode[List[Model]](data.decodeString(Charset.forName("UTF-8")))
-//    }
-//
-//  implicit def decoder[T <: Model]: Decoder[T] =
-//    Decoder.instance(
-//      c =>
-//        c.downField("typeId")
-//          .as[Int]
-//          .flatMap {
-//            case 1 => c.as[SimpleEntity]
-//            case 5 => c.as[ListEntity]
-//            case 0 => c.as[Model]
-//          }
-//          .right
-//          .map(_.asInstanceOf[T])
-//    )
-//}
+case class CompositeEntity(override val id: String,
+                           override val name: String,
+                           override val roles: List[EntityRole],
+                           children: List[Entity])
+    extends Entity(id, name, roles)
+
+case class HierarchicalEntity(override val id: String,
+                              override val name: String,
+                              override val roles: List[EntityRole],
+                              children: List[Entity])
+    extends Entity(id, name, roles)

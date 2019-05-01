@@ -1,125 +1,110 @@
-import sangria.execution.deferred.{Fetcher, HasId}
-import sangria.schema._
+import sangria.macros.derive.ObjectTypeDescription
+import sangria.macros.derive._
+import sangria.schema.{
+  Argument,
+  Field,
+  InterfaceType,
+  ListType,
+  ObjectType,
+  Schema,
+  StringType,
+  fields
+}
+import models.{
+  Application,
+  ApplicationEndpoints,
+  Endpoint,
+  Entity,
+  EntityRole,
+  Intent,
+  ListEntity,
+  Model,
+  SimpleEntity,
+  Sublist
+}
+import repos.{ApplicationRepo, ModelRepo}
 
-import scala.concurrent.Future
-
-/**
- * Defines a GraphQL schema for the current project
- */
 object SchemaDefinition {
-  /**
-    * Resolves the lists of characters. These resolutions are batched and
-    * cached for the duration of a query.
-    */
-  val characters = Fetcher.caching(
-    (ctx: CharacterRepo, ids: Seq[String]) ⇒
-      Future.successful(ids.flatMap(id ⇒ ctx.getHuman(id) orElse ctx.getDroid(id))))(HasId(_.id))
+  val QueryType = ObjectType(
+    "Query",
+    fields[MyContext, Unit](
+      Field(
+        "applications",
+        ListType(ApplicationSchemaDef.ApplicationType),
+        resolve = c => c.ctx.applicationRepo.getApps()(c.ctx.authHeader)
+      ),
+      Field(
+        "application",
+        ApplicationSchemaDef.ApplicationType,
+        arguments = List(Argument("id", StringType)),
+        resolve = c => c.ctx.applicationRepo.getApp(c.arg[String]("id"))(c.ctx.authHeader)
+      )
+    )
+  )
 
-  val EpisodeEnum = EnumType(
-    "Episode",
-    Some("One of the films in the Star Wars Trilogy"),
-    List(
-      EnumValue("NEWHOPE",
-        value = Episode.NEWHOPE,
-        description = Some("Released in 1977.")),
-      EnumValue("EMPIRE",
-        value = Episode.EMPIRE,
-        description = Some("Released in 1980.")),
-      EnumValue("JEDI",
-        value = Episode.JEDI,
-        description = Some("Released in 1983."))))
+  val schema = Schema(QueryType)
+}
 
-  val Character: InterfaceType[CharacterRepo, Character] =
-    InterfaceType(
-      "Character",
-      "A character in the Star Wars Trilogy",
-      () ⇒ fields[CharacterRepo, Character](
-        Field("id", StringType,
-          Some("The id of the character."),
-          resolve = _.value.id),
-        Field("name", OptionType(StringType),
-          Some("The name of the character."),
-          resolve = _.value.name),
-        Field("friends", ListType(Character),
-          Some("The friends of the character, or an empty list if they have none."),
-          resolve = ctx ⇒ characters.deferSeqOpt(ctx.value.friends)),
-        Field("appearsIn", OptionType(ListType(OptionType(EpisodeEnum))),
-          Some("Which movies they appear in."),
-          resolve = _.value.appearsIn map (e ⇒ Some(e)))
-      ))
+object ModelSchemaDef {
+  implicit val SublistType = deriveObjectType[Unit, Sublist]()
 
-  val Human =
-    ObjectType(
-      "Human",
-      "A humanoid creature in the Star Wars universe.",
-      interfaces[CharacterRepo, Human](Character),
-      fields[CharacterRepo, Human](
-        Field("id", StringType,
-          Some("The id of the human."),
-          resolve = _.value.id),
-        Field("name", OptionType(StringType),
-          Some("The name of the human."),
-          resolve = _.value.name),
-        Field("friends", ListType(Character),
-          Some("The friends of the human, or an empty list if they have none."),
-          resolve = ctx ⇒ characters.deferSeqOpt(ctx.value.friends)),
-        Field("appearsIn", OptionType(ListType(OptionType(EpisodeEnum))),
-          Some("Which movies they appear in."),
-          resolve = _.value.appearsIn map (e ⇒ Some(e))),
-        Field("homePlanet", OptionType(StringType),
-          Some("The home planet of the human, or null if unknown."),
-          resolve = _.value.homePlanet)
-      ))
+  implicit val EntityRoleType =
+    deriveObjectType[Unit, EntityRole]()
 
-  val Droid = ObjectType(
-    "Droid",
-    "A mechanical creature in the Star Wars universe.",
-    interfaces[CharacterRepo, Droid](Character),
-    fields[CharacterRepo, Droid](
-      Field("id", StringType,
-        Some("The id of the droid."),
-        resolve = _.value.id),
-      Field("name", OptionType(StringType),
-        Some("The name of the droid."),
-        resolve = ctx ⇒ Future.successful(ctx.value.name)),
-      Field("friends", ListType(Character),
-        Some("The friends of the droid, or an empty list if they have none."),
-        resolve = ctx ⇒ characters.deferSeqOpt(ctx.value.friends)),
-      Field("appearsIn", OptionType(ListType(OptionType(EpisodeEnum))),
-        Some("Which movies they appear in."),
-        resolve = _.value.appearsIn map (e ⇒ Some(e))),
-      Field("primaryFunction", OptionType(StringType),
-        Some("The primary function of the droid."),
-        resolve = _.value.primaryFunction)
-    ))
+  val ModelType = InterfaceType(
+    "Model",
+    "",
+    fields[Unit, Model](
+      Field("id", StringType, resolve = _.value.id),
+      Field("name", StringType, resolve = _.value.name)
+    )
+  )
 
-  val ID = Argument("id", StringType, description = "id of the character")
+  val IntentType =
+    deriveObjectType[Unit, Intent](Interfaces(ModelType))
 
-  val EpisodeArg = Argument("episode", OptionInputType(EpisodeEnum),
-    description = "If omitted, returns the hero of the whole saga. If provided, returns the hero of that particular episode.")
+  val EntityType = InterfaceType(
+    "Entity",
+    "",
+    fields[Unit, Entity](
+      Field("id", StringType, resolve = _.value.id),
+      Field("name", StringType, resolve = _.value.name),
+      Field("roles", ListType(EntityRoleType), resolve = _.value.roles)
+    )
+  )
 
-  val LimitArg = Argument("limit", OptionInputType(IntType), defaultValue = 20)
-  val OffsetArg = Argument("offset", OptionInputType(IntType), defaultValue = 0)
+  val SimpleEntityType =
+    deriveObjectType[Unit, SimpleEntity](Interfaces(ModelType, EntityType))
 
-  val Query = ObjectType(
-    "Query", fields[CharacterRepo, Unit](
-      Field("hero", Character,
-        arguments = EpisodeArg :: Nil,
-        deprecationReason = Some("Use `human` or `droid` fields instead"),
-        resolve = (ctx) ⇒ ctx.ctx.getHero(ctx.arg(EpisodeArg))),
-      Field("human", OptionType(Human),
-        arguments = ID :: Nil,
-        resolve = ctx ⇒ ctx.ctx.getHuman(ctx arg ID)),
-      Field("droid", Droid,
-        arguments = ID :: Nil,
-        resolve = ctx ⇒ ctx.ctx.getDroid(ctx arg ID).get),
-      Field("humans", ListType(Human),
-        arguments = LimitArg :: OffsetArg :: Nil,
-        resolve = ctx ⇒ ctx.ctx.getHumans(ctx arg LimitArg, ctx arg OffsetArg)),
-      Field("droids", ListType(Droid),
-        arguments = LimitArg :: OffsetArg :: Nil,
-        resolve = ctx ⇒ ctx.ctx.getDroids(ctx arg LimitArg, ctx arg OffsetArg))
-    ))
+  val ListEntityType =
+    deriveObjectType[Unit, ListEntity](Interfaces(ModelType, EntityType))
 
-  val StarWarsSchema = Schema(Query)
+}
+
+object ApplicationSchemaDef {
+  implicit val EndpointType = deriveObjectType[Unit, Endpoint]()
+
+  implicit val ApplicationEndpointsType =
+    deriveObjectType[Unit, ApplicationEndpoints]()
+
+  val ApplicationType =
+    deriveObjectType[MyContext, Application](
+      ObjectTypeDescription("Luis Application"),
+      AddFields(
+        Field(
+          "intents",
+          ListType(ModelSchemaDef.IntentType),
+          resolve = c =>
+            c.ctx.modelRepo.getIntents(c.value.id, c.value.activeVersion)(c.ctx.authHeader)
+        ),
+        Field(
+          "entities",
+          ListType(ModelSchemaDef.EntityType),
+          resolve = c =>
+            c.ctx.modelRepo.getEntities(c.value.id, c.value.activeVersion)(c.ctx.authHeader),
+          possibleTypes =
+            List(ModelSchemaDef.SimpleEntityType, ModelSchemaDef.ListEntityType)
+        )
+      )
+    )
 }

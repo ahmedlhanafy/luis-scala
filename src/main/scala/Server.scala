@@ -1,5 +1,4 @@
 import sangria.ast.Document
-import sangria.execution.deferred.DeferredResolver
 import sangria.execution.{ErrorWithResolver, Executor, QueryAnalysisError}
 import sangria.parser.{QueryParser, SyntaxError}
 import sangria.parser.DeliveryScheme.Try
@@ -19,24 +18,31 @@ import io.circe.parser._
 import scala.util.control.NonFatal
 import scala.util.{Failure, Success}
 import GraphQLRequestUnmarshaller._
+import akka.http.scaladsl.model.HttpHeader
+import akka.http.scaladsl.model.headers.RawHeader
+import repos.{ApplicationRepo, ModelRepo}
 import sangria.slowlog.SlowLog
+import constants.authHeaderKey
 
 object Server extends App with CorsSupport {
+  import system.dispatcher
   implicit val system = ActorSystem("sangria-server")
   implicit val materializer = ActorMaterializer()
 
-  import system.dispatcher
+  implicit val applicationRepo = new ApplicationRepo()
+  implicit val modelRepo = new ModelRepo()
 
   def executeGraphQL(query: Document,
                      operationName: Option[String],
                      variables: Json,
-                     tracing: Boolean) =
+                     tracing: Boolean,
+                     headers: Seq[HttpHeader]) =
     complete(
       Executor
         .execute(
-          LuisSchemaDefinition.schema,
+          SchemaDefinition.schema,
           query,
-          new AppService,
+          new MyContext(headers.find(_.name() == authHeaderKey).getOrElse(RawHeader(authHeaderKey, ""))),
           variables = if (variables.isNull) Json.obj() else variables,
           operationName = operationName,
           middleware =
@@ -82,50 +88,16 @@ object Server extends App with CorsSupport {
   val route: Route =
     optionalHeaderValueByName("X-Apollo-Tracing") { tracing ⇒
       path("graphql") {
-        get {
-          explicitlyAccepts(`text/html`) {
-            getFromResource("assets/playground.html")
-          } ~
-            parameters('query, 'operationName.?, 'variables.?) {
-              (query, operationName, variables) ⇒
-                QueryParser.parse(query) match {
-                  case Success(ast) ⇒
-                    variables.map(parse) match {
-                      case Some(Left(error)) ⇒
-                        complete(BadRequest, formatError(error))
-                      case Some(Right(json)) ⇒
-                        executeGraphQL(
-                          ast,
-                          operationName,
-                          json,
-                          tracing.isDefined
-                        )
-                      case None ⇒
-                        executeGraphQL(
-                          ast,
-                          operationName,
-                          Json.obj(),
-                          tracing.isDefined
-                        )
-                    }
-                  case Failure(error) ⇒ complete(BadRequest, formatError(error))
-                }
-            }
-        } ~
-          post {
-            parameters('query.?, 'operationName.?, 'variables.?) {
-              (queryParam, operationNameParam, variablesParam) ⇒
-                entity(as[Json]) { body ⇒
-                  val query = queryParam orElse root.query.string
-                    .getOption(body)
-                  val operationName = operationNameParam orElse root.operationName.string
-                    .getOption(body)
-                  val variablesStr = variablesParam orElse root.variables.string
-                    .getOption(body)
-
-                  query.map(QueryParser.parse(_)) match {
-                    case Some(Success(ast)) ⇒
-                      variablesStr.map(parse) match {
+        extractRequest { req =>
+          get {
+            explicitlyAccepts(`text/html`) {
+              getFromResource("assets/playground.html")
+            } ~
+              parameters('query, 'operationName.?, 'variables.?) {
+                (query, operationName, variables) ⇒
+                  QueryParser.parse(query) match {
+                    case Success(ast) ⇒
+                      variables.map(parse) match {
                         case Some(Left(error)) ⇒
                           complete(BadRequest, formatError(error))
                         case Some(Right(json)) ⇒
@@ -133,45 +105,88 @@ object Server extends App with CorsSupport {
                             ast,
                             operationName,
                             json,
-                            tracing.isDefined
+                            tracing.isDefined,
+                            req.headers
                           )
                         case None ⇒
                           executeGraphQL(
                             ast,
                             operationName,
-                            root.variables.json.getOption(body) getOrElse Json
-                              .obj(),
-                            tracing.isDefined
+                            Json.obj(),
+                            tracing.isDefined,
+                            req.headers
                           )
                       }
-                    case Some(Failure(error)) ⇒
+                    case Failure(error) ⇒
                       complete(BadRequest, formatError(error))
-                    case None ⇒
-                      complete(BadRequest, formatError("No query to execute"))
                   }
-                } ~
-                  entity(as[Document]) { document ⇒
-                    variablesParam.map(parse) match {
-                      case Some(Left(error)) ⇒
+              }
+          } ~
+            post {
+              parameters('query.?, 'operationName.?, 'variables.?) {
+                (queryParam, operationNameParam, variablesParam) ⇒
+                  entity(as[Json]) { body ⇒
+                    val query = queryParam orElse root.query.string
+                      .getOption(body)
+                    val operationName = operationNameParam orElse root.operationName.string
+                      .getOption(body)
+                    val variablesStr = variablesParam orElse root.variables.string
+                      .getOption(body)
+
+                    query.map(QueryParser.parse(_)) match {
+                      case Some(Success(ast)) ⇒
+                        variablesStr.map(parse) match {
+                          case Some(Left(error)) ⇒
+                            complete(BadRequest, formatError(error))
+                          case Some(Right(json)) ⇒
+                            executeGraphQL(
+                              ast,
+                              operationName,
+                              json,
+                              tracing.isDefined,
+                              req.headers
+                            )
+                          case None ⇒
+                            executeGraphQL(
+                              ast,
+                              operationName,
+                              root.variables.json.getOption(body) getOrElse Json
+                                .obj(),
+                              tracing.isDefined,
+                              req.headers
+                            )
+                        }
+                      case Some(Failure(error)) ⇒
                         complete(BadRequest, formatError(error))
-                      case Some(Right(json)) ⇒
-                        executeGraphQL(
-                          document,
-                          operationNameParam,
-                          json,
-                          tracing.isDefined
-                        )
                       case None ⇒
-                        executeGraphQL(
-                          document,
-                          operationNameParam,
-                          Json.obj(),
-                          tracing.isDefined
-                        )
+                        complete(BadRequest, formatError("No query to execute"))
                     }
-                  }
+                  } ~
+                    entity(as[Document]) { document ⇒
+                      variablesParam.map(parse) match {
+                        case Some(Left(error)) ⇒
+                          complete(BadRequest, formatError(error))
+                        case Some(Right(json)) ⇒
+                          executeGraphQL(
+                            document,
+                            operationNameParam,
+                            json,
+                            tracing.isDefined,
+                            req.headers
+                          )
+                        case None ⇒
+                          executeGraphQL(
+                            document,
+                            operationNameParam,
+                            Json.obj(),
+                            tracing.isDefined,
+                            req.headers
+                          )
+                      }
+                    }
+              }
             }
-          }
+        }
       }
     } ~
       (get & pathEndOrSingleSlash) {

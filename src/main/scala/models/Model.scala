@@ -63,6 +63,14 @@ object Model {
         parser.decode[Model](data.decodeString(Charset.forName("UTF-8")))
     }
 
+  implicit val optionUnmarshaller
+  : Unmarshaller[HttpEntity, Either[circe.Error, Option[Model]]] =
+    Unmarshaller.byteStringUnmarshaller.map {
+      case ByteString.empty ⇒ throw Unmarshaller.NoContentException
+      case data ⇒
+        parser.decode[Option[Model]](data.decodeString(Charset.forName("UTF-8")))
+    }
+
   implicit val listUnmarshaller
     : Unmarshaller[HttpEntity, Either[circe.Error, List[Model]]] =
     Unmarshaller.byteStringUnmarshaller.map {

@@ -84,7 +84,7 @@
 //    val futureResult = Executor.execute(StarWarsSchema, query,
 //      variables = vars,
 //      userContext = new CharacterRepo,
-//      deferredResolver = DeferredResolver.fetchers(SchemaDefinition.characters))
+//      deferredResolver = DeferredResolver.fetchers(SchemaDef.characters))
 //
 //    Await.result(futureResult, 10.seconds)
 //  }

@@ -20,17 +20,20 @@ import scala.util.{Failure, Success}
 import GraphQLRequestUnmarshaller._
 import akka.http.scaladsl.model.HttpHeader
 import akka.http.scaladsl.model.headers.RawHeader
-import repos.{ApplicationRepo, ModelRepo}
+import repos.{ApplicationRepo, ModelRepo, UtteranceRepo}
 import sangria.slowlog.SlowLog
 import constants.authHeaderKey
+import graphql.{MyContext, SchemaDef}
+import services.HttpService
 
 object Server extends App with CorsSupport {
   import system.dispatcher
   implicit val system = ActorSystem("sangria-server")
   implicit val materializer = ActorMaterializer()
-
+  implicit val httpService = new HttpService()
   implicit val applicationRepo = new ApplicationRepo()
   implicit val modelRepo = new ModelRepo()
+  implicit val utteranceRepo = new UtteranceRepo()
 
   def executeGraphQL(query: Document,
                      operationName: Option[String],
@@ -40,9 +43,13 @@ object Server extends App with CorsSupport {
     complete(
       Executor
         .execute(
-          SchemaDefinition.schema,
+          SchemaDef.schema,
           query,
-          new MyContext(headers.find(_.name() == authHeaderKey).getOrElse(RawHeader(authHeaderKey, ""))),
+          new MyContext(
+            headers
+              .find(_.name() == authHeaderKey)
+              .getOrElse(RawHeader(authHeaderKey, ""))
+          ),
           variables = if (variables.isNull) Json.obj() else variables,
           operationName = operationName,
           middleware =

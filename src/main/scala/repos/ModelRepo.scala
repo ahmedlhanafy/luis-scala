@@ -1,84 +1,65 @@
 package repos
 
-import akka.actor.ActorSystem
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.{HttpHeader, HttpRequest}
-import akka.http.scaladsl.unmarshalling.Unmarshal
-import akka.stream.ActorMaterializer
-import io.circe
-import models.{Entity, Intent, Model, Utterance, UtterancePrediction}
-import constants.{baseUrl, webApibaseUrl}
+import akka.http.scaladsl.model.HttpHeader
+import constants.baseUrl
+import models.{Entity, Intent, Model}
+import services.HttpService
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class ModelRepo(implicit actorSystem: ActorSystem,
-                implicit val context: ExecutionContext,
-                implicit val materializer: ActorMaterializer) {
+class ModelRepo(implicit httpService: HttpService,
+                implicit val executionContext: ExecutionContext) {
 
   object ModelType extends Enumeration {
     val Intent, Entity = Value
   }
 
-  def getUtterances(
+  def get(
     applicationId: String,
     versionId: String,
     modelId: String,
-    withPredictions: Boolean
-  )(implicit authHeader: HttpHeader): Future[List[Utterance]] = {
-    val labelsFuture = Http()
-      .singleRequest(
-        HttpRequest(
-          uri =
-            s"$webApibaseUrl/apps/$applicationId/versions/$versionId/models/$modelId/reviewLabels?skip=0&take=10",
-          headers = authHeader :: Nil
-        )
+    `type`: ModelType.Value = ModelType.Intent
+  )(implicit authHeader: HttpHeader): Future[Option[Model]] =
+    httpService
+      .get[Option[Model]](
+        uri =
+          s"$baseUrl/apps/$applicationId/versions/$versionId/models/$modelId",
+        headers = authHeader :: Nil
       )
-      .flatMap(Unmarshal(_).to[Either[circe.Error, List[Utterance]]])
       .map {
-        case Right(utterances) => utterances
-        case Left(e)           => throw e
+        case Some(model) =>
+          if (`type` == ModelType.Intent) Some(model.asInstanceOf[Intent])
+          else Some(model.asInstanceOf[Entity])
+        case None => None
       }
 
-    val predictionsFuture = Http()
-      .singleRequest(
-        HttpRequest(
-          uri =
-            s"$webApibaseUrl/apps/$applicationId/versions/$versionId/models/$modelId/reviewPredictions?skip=0&take=10",
-          headers = authHeader :: Nil
-        )
+  def getAll(
+    applicationId: String,
+    versionId: String,
+    `type`: ModelType.Value = ModelType.Intent
+  )(implicit authHeader: HttpHeader): Future[List[Model]] =
+    httpService
+      .get[List[Model]](
+        uri =
+          s"$baseUrl/apps/$applicationId/versions/$versionId/models?take=500",
+        headers = authHeader :: Nil
       )
-      .flatMap(Unmarshal(_).to[Either[circe.Error, List[UtterancePrediction]]])
-      .map {
-        case Right(utterances) => utterances
-        case Left(e)           => throw new Exception(e)
+      .map { models =>
+        models.filter(
+          if (`type` == ModelType.Intent) _.isInstanceOf[Intent]
+          else _.isInstanceOf[Entity]
+        )
       }
-
-    if (withPredictions) {
-      for {
-        labels <- labelsFuture
-        predictions <- predictionsFuture
-      } yield
-        labels zip predictions map {
-          case (a, b) =>
-            a.copy(
-              alteredText = b.alteredText,
-              intentPredictions = Some(b.intentPredictions),
-              entityPredictions = b.entityPredictions
-            )
-        }
-    } else
-      labelsFuture
-  }
 
   def getIntents(applicationId: String, versionId: String)(
     implicit authHeader: HttpHeader
   ): Future[List[Intent]] =
-    getModels(applicationId, versionId).map(_.map(_.asInstanceOf[Intent]))
+    getAll(applicationId, versionId).map(_.map(_.asInstanceOf[Intent]))
 
   def getEntities(applicationId: String, versionId: String)(
     implicit authHeader: HttpHeader
   ): Future[List[Entity]] =
-    getModels(applicationId, versionId, ModelType.Entity)
+    getAll(applicationId, versionId, ModelType.Entity)
       .map(_.map { list =>
         list.asInstanceOf[Entity]
       })
@@ -86,58 +67,12 @@ class ModelRepo(implicit actorSystem: ActorSystem,
   def getIntent(applicationId: String, versionId: String, intentId: String)(
     implicit authHeader: HttpHeader
   ): Future[Option[Intent]] =
-    getModel(applicationId, versionId, intentId).map(
-      _.map(_.asInstanceOf[Intent])
-    )
+    get(applicationId, versionId, intentId).map(_.map(_.asInstanceOf[Intent]))
 
   def getEntity(applicationId: String, versionId: String, entityId: String)(
     implicit authHeader: HttpHeader
   ): Future[Option[Entity]] =
-    getModel(applicationId, versionId, entityId, ModelType.Entity)
+    get(applicationId, versionId, entityId, ModelType.Entity)
       .map(_.map(_.asInstanceOf[Entity]))
 
-  def getModel(
-    applicationId: String,
-    versionId: String,
-    modelId: String,
-    `type`: ModelType.Value = ModelType.Intent
-  )(implicit authHeader: HttpHeader): Future[Option[Model]] =
-    Http()
-      .singleRequest(
-        HttpRequest(
-          uri =
-            s"$baseUrl/apps/$applicationId/versions/$versionId/models/$modelId",
-          headers = authHeader :: Nil
-        )
-      )
-      .flatMap(Unmarshal(_).to[Either[circe.Error, Model]])
-      .map {
-        case Right(model) =>
-          if (`type` == ModelType.Intent) Some(model.asInstanceOf[Intent])
-          else Some(model.asInstanceOf[Entity])
-        case Left(_) => None
-      }
-
-  def getModels(
-    applicationId: String,
-    versionId: String,
-    `type`: ModelType.Value = ModelType.Intent
-  )(implicit authHeader: HttpHeader) =
-    Http()
-      .singleRequest(
-        HttpRequest(
-          uri =
-            s"$baseUrl/apps/$applicationId/versions/$versionId/models?take=500",
-          headers = authHeader :: Nil
-        )
-      )
-      .flatMap(Unmarshal(_).to[Either[circe.Error, List[Model]]])
-      .map {
-        case Right(intents) =>
-          intents.filter(
-            if (`type` == ModelType.Intent) _.isInstanceOf[Intent]
-            else _.isInstanceOf[Entity]
-          )
-        case Left(_) => List.empty[Model]
-      }
 }

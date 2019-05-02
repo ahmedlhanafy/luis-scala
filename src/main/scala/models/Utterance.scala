@@ -49,13 +49,14 @@ object Label {
       startTokenIndex <- c.downField("startTokenIndex").as[Int]
       endTokenIndex <- c.downField("endTokenIndex").as[Int]
       entityName <- c.downField("entityName").as[String]
-      roleId <- c.downField("roleId").as[Option[String]]
-      roleName <- c.downField("role").as[Option[String]]
+      roleId <- c.downField("roleId").as[String]
+      roleName <- c.downField("role").as[String]
     } yield {
       val role = (roleId, roleName) match {
-        case (Some(id), Some(name)) => Some(EntityRole(id, name))
-        case _                      => None
+        case ("", "")     => None
+        case (rId, rName) => Some(EntityRole(rId, rName))
       }
+
       Label(
         startTokenIndex,
         endTokenIndex,
@@ -79,28 +80,6 @@ object IntentPrediction {
 }
 
 object Utterance {
-
-  implicit val decoder: Decoder[Label] = (c: HCursor) =>
-    for {
-      id <- c.downField("id").as[String]
-      startTokenIndex <- c.downField("startTokenIndex").as[Int]
-      endTokenIndex <- c.downField("endTokenIndex").as[Int]
-      entityName <- c.downField("entityName").as[String]
-      roleId <- c.downField("roleId").as[Option[String]]
-      roleName <- c.downField("role").as[Option[String]]
-    } yield {
-      val role = (roleId, roleName) match {
-        case (Some(id), Some(name)) => Some(EntityRole(id, name))
-        case _                      => None
-      }
-      Label(
-        startTokenIndex,
-        endTokenIndex,
-        SimpleEntity(id, entityName, List.empty),
-        role
-      )
-  }
-
   implicit val listUnmarshaller
     : Unmarshaller[HttpEntity, Either[circe.Error, List[Utterance]]] =
     Unmarshaller.byteStringUnmarshaller.map {

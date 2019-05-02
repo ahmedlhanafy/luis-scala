@@ -7,7 +7,6 @@ import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.ByteString
 import io.circe
 import io.circe.{Decoder, HCursor, parser}
-import io.circe.generic.auto._
 
 case class Utterance(id: Int,
                      text: String,
@@ -20,13 +19,41 @@ case class Utterance(id: Int,
                      entityPredictions: Option[List[Label]])
 
 case class UtterancePrediction(id: Int,
+                               text: Option[String],
+                               tokenizedText: Option[List[String]],
                                alteredText: Option[String],
                                intentPredictions: List[IntentPrediction],
                                entityPredictions: Option[List[Label]])
 
 object UtterancePrediction {
+  implicit val decoder: Decoder[UtterancePrediction] = (c: HCursor) =>
+    for {
+      id <- c.downField("id").as[Int]
+      text <- c.downField("text").as[Option[String]]
+      tokenizedText <- c.downField("tokenizedText").as[Option[List[String]]]
+      alteredText <- c.downField("alteredText").as[Option[String]]
+      intentPredictions <- c
+        .downField("intentPredictions")
+        .as[List[IntentPrediction]]
+      entityPredictions <- c
+        .downField("entityPredictions")
+        .as[Option[List[Label]]]
+    } yield
+      UtterancePrediction(
+        id,
+        text,
+        tokenizedText,
+        alteredText,
+        intentPredictions,
+        entityPredictions map { label =>
+          tokenizedText match {
+            case Some(arr) => Label.populateLabelPhrase(label, arr)
+            case None      => label
+          }
+        },
+    )
 
-  implicit val listUnmarshaller
+  implicit val listUnMarshaller
     : Unmarshaller[HttpEntity, Either[circe.Error, List[UtterancePrediction]]] =
     Unmarshaller.byteStringUnmarshaller.map {
       case ByteString.empty ⇒ throw Unmarshaller.NoContentException
@@ -40,9 +67,22 @@ object UtterancePrediction {
 case class Label(startTokenIndex: Int,
                  endTokenIndex: Int,
                  entity: SimpleEntity,
-                 role: Option[EntityRole])
+                 role: Option[EntityRole],
+                 phrase: String,
+)
 
 object Label {
+  def populateLabelPhrase(labels: List[Label],
+                          tokenizedText: List[String]): List[Label] = {
+    labels.map({ label =>
+      label.copy(
+        phrase = tokenizedText
+          .slice(label.startTokenIndex, label.endTokenIndex + 1)
+          .mkString(" ")
+      )
+    })
+  }
+
   implicit val decoder: Decoder[Label] = (c: HCursor) => {
     for {
       id <- c.downField("id").as[String]
@@ -61,7 +101,8 @@ object Label {
         startTokenIndex,
         endTokenIndex,
         SimpleEntity(id, entityName, List.empty),
-        role
+        role,
+        null
       )
     }
   }
@@ -80,13 +121,42 @@ object IntentPrediction {
 }
 
 object Utterance {
-  implicit val listUnmarshaller
+  implicit val decoder: Decoder[Utterance] = (c: HCursor) =>
+    for {
+
+      id <- c.downField("id").as[Int]
+      text <- c.downField("text").as[String]
+      tokenizedText <- c.downField("tokenizedText").as[List[String]]
+      alteredText <- c.downField("alteredText").as[Option[String]]
+      entityLabels <- c.downField("entityLabels").as[Option[List[Label]]]
+      createdDateTime <- c.downField("createdDateTime").as[String]
+      modifiedDateTime <- c.downField("modifiedDateTime").as[String]
+      intentPredictions <- c
+        .downField("intentPredictions")
+        .as[Option[List[IntentPrediction]]]
+      entityPredictions <- c
+        .downField("entityPredictions")
+        .as[Option[List[Label]]]
+    } yield
+      Utterance(
+        id,
+        text,
+        tokenizedText,
+        entityLabels map { Label.populateLabelPhrase(_, tokenizedText) },
+        createdDateTime,
+        modifiedDateTime,
+        alteredText,
+        intentPredictions,
+        entityPredictions map { Label.populateLabelPhrase(_, tokenizedText) }
+    )
+
+  implicit val listUnMarshaller
     : Unmarshaller[HttpEntity, Either[circe.Error, List[Utterance]]] =
     Unmarshaller.byteStringUnmarshaller.map {
       case ByteString.empty ⇒ throw Unmarshaller.NoContentException
-      case data ⇒ {
-        val x = data.decodeString(Charset.forName("UTF-8"))
-        parser.decode[List[Utterance]](x)
-      }
+      case data ⇒
+        parser.decode[List[Utterance]](
+          data.decodeString(Charset.forName("UTF-8"))
+        )
     }
 }

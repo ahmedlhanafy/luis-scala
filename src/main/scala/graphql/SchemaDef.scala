@@ -9,7 +9,8 @@ import sangria.schema.{
   StringType,
   fields
 }
-import graphql.types.Application.{ApplicationType}
+import graphql.types.Application.ApplicationType
+import graphql.types.Pagination.{PaginationArgs, paginationArgs}
 
 object SchemaDef {
   val QueryType = ObjectType(
@@ -18,7 +19,11 @@ object SchemaDef {
       Field(
         "applications",
         ListType(ApplicationType),
-        resolve = c => c.ctx.applicationRepo.getAll()(c.ctx.authHeader)
+        arguments = paginationArgs,
+        resolve = c =>
+          c.ctx.applicationRepo.getAll(
+            PaginationArgs(c.arg[Int]("skip"), c.arg[Int]("take"))
+          )(c.ctx.authHeader)
       ),
       Field(
         "application",

@@ -2,8 +2,9 @@ package graphql.types
 
 import graphql.MyContext
 import graphql.types.Model._
-import models.{IntentPrediction, Label, Utterance}
+import models.{IntentPrediction, Label, Utterance, UtterancePrediction}
 import sangria.ast.Selection
+import sangria.execution.deferred.{Fetcher, HasId}
 import sangria.macros.derive.{ReplaceField, deriveObjectType}
 import sangria.schema.{Field, ObjectType, OptionType}
 
@@ -37,6 +38,9 @@ object Utterance {
       )
     )
 
-  implicit val UtteranceType: ObjectType[MyContext, Utterance] =
-    deriveObjectType[MyContext, Utterance]()
+  implicit val UtteranceType: ObjectType[Unit, Utterance] =
+    deriveObjectType[Unit, Utterance]()
+
+  implicit val UtterancePredictionType: ObjectType[Unit, UtterancePrediction] =
+    deriveObjectType[Unit, UtterancePrediction]()
 }

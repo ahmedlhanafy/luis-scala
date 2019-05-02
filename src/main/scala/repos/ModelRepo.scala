@@ -23,8 +23,7 @@ class ModelRepo(implicit httpService: HttpService,
     httpService
       .get[Option[Model]](
         uri =
-          s"$baseUrl/apps/$applicationId/versions/$versionId/models/$modelId",
-        headers = authHeader :: Nil
+          s"$baseUrl/apps/$applicationId/versions/$versionId/models/$modelId"
       )
       .map {
         case Some(model) =>
@@ -41,8 +40,7 @@ class ModelRepo(implicit httpService: HttpService,
     httpService
       .get[List[Model]](
         uri =
-          s"$baseUrl/apps/$applicationId/versions/$versionId/models?take=500",
-        headers = authHeader :: Nil
+          s"$baseUrl/apps/$applicationId/versions/$versionId/models?take=500"
       )
       .map { models =>
         models.filter(

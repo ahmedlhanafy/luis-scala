@@ -1,7 +1,8 @@
 package repos
 
 import akka.http.scaladsl.model.HttpHeader
-import constants.webApibaseUrl
+import constants.webApiBaseUrl
+import graphql.types.Pagination.PaginationArgs
 import models.{Utterance, UtterancePrediction}
 import services.HttpService
 
@@ -13,18 +14,15 @@ class UtteranceRepo(implicit httpService: HttpService,
     applicationId: String,
     versionId: String,
     modelId: String,
+    pagination: PaginationArgs,
     withPredictions: Boolean
   )(implicit authHeader: HttpHeader): Future[List[Utterance]] = {
     val labelsFuture = httpService.get[List[Utterance]](
-      uri =
-        s"$webApibaseUrl/apps/$applicationId/versions/$versionId/models/$modelId/reviewLabels?skip=0&take=10",
-      headers = authHeader :: Nil
+      s"$webApiBaseUrl/apps/$applicationId/versions/$versionId/models/$modelId/reviewLabels?skip=${pagination.skip}&take=${pagination.take}",
     )
 
     val predictionsFuture = httpService.get[List[UtterancePrediction]](
-      uri =
-        s"$webApibaseUrl/apps/$applicationId/versions/$versionId/models/$modelId/reviewPredictions?skip=0&take=10",
-      headers = authHeader :: Nil
+      s"$webApiBaseUrl/apps/$applicationId/versions/$versionId/models/$modelId/reviewPredictions?skip=${pagination.skip}&take=${pagination.take}",
     )
 
     if (withPredictions) {
@@ -42,5 +40,15 @@ class UtteranceRepo(implicit httpService: HttpService,
         }
     } else
       labelsFuture
+  }
+
+  def predict(applicationId: String, versionId: String, text: Seq[String])(
+    implicit authHeader: HttpHeader
+  ): Future[List[UtterancePrediction]] = {
+    httpService.post[Seq[String], List[UtterancePrediction]](
+      uri =
+        s"$webApiBaseUrl/apps/$applicationId/versions/$versionId/predict?getExampleIds=true",
+      data = text
+    )
   }
 }

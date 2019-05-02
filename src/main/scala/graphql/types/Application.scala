@@ -2,9 +2,31 @@ package graphql.types
 
 import graphql.MyContext
 import models.{Application, ApplicationEndpoints, Endpoint}
-import sangria.macros.derive.{AddFields, ObjectTypeDescription, deriveObjectType}
-import sangria.schema.{Argument, Context, Field, ListType, ObjectType, OptionType, StringType, UpdateCtx}
-import graphql.types.Model.{CompositeEntityType, EntityType, HierarchicalEntityType, IntentType, ListEntityType, SimpleEntityType}
+import sangria.macros.derive.{
+  AddFields,
+  ObjectTypeDescription,
+  deriveObjectType
+}
+import sangria.schema.{
+  Argument,
+  Context,
+  Field,
+  ListInputType,
+  ListType,
+  ObjectType,
+  OptionType,
+  StringType,
+  UpdateCtx
+}
+import graphql.types.Model.{
+  CompositeEntityType,
+  EntityType,
+  HierarchicalEntityType,
+  IntentType,
+  ListEntityType,
+  SimpleEntityType
+}
+import graphql.types.Utterance.UtterancePredictionType
 
 object Application {
   val idArgument = Argument("id", StringType)
@@ -20,10 +42,13 @@ object Application {
     )
   }
 
-  implicit val EndpointType: ObjectType[Unit, Endpoint] = deriveObjectType[Unit, Endpoint]()
+  implicit val EndpointType: ObjectType[Unit, Endpoint] =
+    deriveObjectType[Unit, Endpoint]()
 
-  implicit val ApplicationEndpointsType: ObjectType[Unit, ApplicationEndpoints] =
+  implicit val ApplicationEndpointsType
+    : ObjectType[Unit, ApplicationEndpoints] =
     deriveObjectType[Unit, ApplicationEndpoints]()
+
 
   val ApplicationType: ObjectType[MyContext, Application] =
     deriveObjectType[MyContext, Application](
@@ -94,6 +119,20 @@ object Application {
             CompositeEntityType,
             HierarchicalEntityType
           )
+        ),
+        Field(
+          "predictions",
+          ListType(UtterancePredictionType),
+          arguments = Argument("utterances", ListInputType(StringType)) :: Nil,
+          resolve = c =>
+            UpdateCtx(
+              c.ctx.utteranceRepo
+                .predict(
+                  c.value.id,
+                  c.value.activeVersion,
+                  c.arg[Seq[String]]("utterances")
+                )(c.ctx.authHeader)
+            )(_ => updateCtx(c))
         )
       )
     )

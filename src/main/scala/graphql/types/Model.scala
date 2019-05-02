@@ -1,20 +1,12 @@
 package graphql.types
 
 import graphql.MyContext
+import graphql.types.Pagination.{PaginationArgs, paginationArgs}
 import graphql.types.Utterance.UtteranceType
 import models._
 import sangria.ast.Selection
-import sangria.macros.derive.{Interfaces, ReplaceField, deriveObjectType}
-import sangria.schema.{
-  Context,
-  Field,
-  InterfaceType,
-  ListType,
-  ObjectType,
-  OptionType,
-  StringType,
-  fields
-}
+import sangria.macros.derive.{Interfaces, deriveObjectType}
+import sangria.schema.{Context, Field, InterfaceType, ListType, ObjectType, StringType, fields}
 
 import scala.concurrent.Future
 
@@ -36,7 +28,8 @@ object Model {
       c.ctx.applicationId.getOrElse(""),
       c.ctx.versionId.getOrElse(""),
       c.value.id,
-      requiresPredictions
+      PaginationArgs(c.arg[Int]("skip"), c.arg[Int]("take")),
+      requiresPredictions,
     )(c.ctx.authHeader)
   }
 
@@ -69,6 +62,7 @@ object Model {
         Field(
           "utterances",
           ListType(UtteranceType),
+          arguments = paginationArgs,
           resolve = c => utterancesResolver(c)
         )
     )
@@ -91,13 +85,14 @@ object Model {
   implicit val IntentType: ObjectType[MyContext, Intent] =
     ObjectType(
       "Intent",
-      "TODO",
+      "",
       fields[MyContext, Intent](
         Field("id", StringType, resolve = _.value.id),
         Field("name", StringType, resolve = _.value.name),
         Field(
           "utterances",
           ListType(UtteranceType),
+          arguments = paginationArgs,
           resolve = c => utterancesResolver(c)
         )
       )

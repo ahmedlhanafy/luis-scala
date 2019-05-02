@@ -1,30 +1,30 @@
-import sangria.ast.Document
-import sangria.execution.{ErrorWithResolver, Executor, QueryAnalysisError}
-import sangria.parser.{QueryParser, SyntaxError}
-import sangria.parser.DeliveryScheme.Try
-import sangria.marshalling.circe._
+import GraphQLRequestUnmarshaller._
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.StatusCodes._
-import akka.http.scaladsl.server.Directives._
+import akka.http.scaladsl.model.HttpHeader
 import akka.http.scaladsl.model.MediaTypes._
+import akka.http.scaladsl.model.StatusCodes._
+import akka.http.scaladsl.model.headers.RawHeader
+import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server._
 import akka.stream.ActorMaterializer
+import constants.authHeaderKey
 import de.heikoseeberger.akkahttpcirce.ErrorAccumulatingCirceSupport._
+import graphql.{MyContext, SchemaDef}
 import io.circe._
 import io.circe.optics.JsonPath._
 import io.circe.parser._
+import repos.{ApplicationRepo, ModelRepo, UtteranceRepo}
+import sangria.ast.Document
+import sangria.execution.{ErrorWithResolver, Executor, QueryAnalysisError}
+import sangria.marshalling.circe._
+import sangria.parser.DeliveryScheme.Try
+import sangria.parser.{QueryParser, SyntaxError}
+import sangria.slowlog.SlowLog
+import services.HttpService
 
 import scala.util.control.NonFatal
 import scala.util.{Failure, Success}
-import GraphQLRequestUnmarshaller._
-import akka.http.scaladsl.model.HttpHeader
-import akka.http.scaladsl.model.headers.RawHeader
-import repos.{ApplicationRepo, ModelRepo, UtteranceRepo}
-import sangria.slowlog.SlowLog
-import constants.authHeaderKey
-import graphql.{MyContext, SchemaDef}
-import services.HttpService
 
 object Server extends App with CorsSupport {
   import system.dispatcher
@@ -34,6 +34,7 @@ object Server extends App with CorsSupport {
   implicit val applicationRepo = new ApplicationRepo()
   implicit val modelRepo = new ModelRepo()
   implicit val utteranceRepo = new UtteranceRepo()
+
 
   def executeGraphQL(query: Document,
                      operationName: Option[String],
@@ -45,7 +46,7 @@ object Server extends App with CorsSupport {
         .execute(
           SchemaDef.schema,
           query,
-          new MyContext(
+          MyContext(
             headers
               .find(_.name() == authHeaderKey)
               .getOrElse(RawHeader(authHeaderKey, ""))
@@ -54,7 +55,7 @@ object Server extends App with CorsSupport {
           operationName = operationName,
           middleware =
             if (tracing) SlowLog.apolloTracing :: Nil
-            else Nil
+            else Nil,
         )
         .map(OK → _)
         .recover {

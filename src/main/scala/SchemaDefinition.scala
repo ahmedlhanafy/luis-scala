@@ -99,6 +99,41 @@ object ModelSchemaDef {
       Interfaces(ModelType, EntityType)
     )
 
+  implicit val UtteranceType: ObjectType[MyContext, Utterance] = deriveObjectType[MyContext, Utterance]()
+
+
+  implicit val IntentType: ObjectType[MyContext, Intent] =
+    ObjectType(
+      "Intent",
+      "TODO",
+      fields[MyContext, Intent](
+        Field("id", StringType, resolve = _.value.id),
+        Field("name", StringType, resolve = _.value.name),
+        Field(
+          "utterances",
+          ListType(UtteranceType),
+          resolve = c => {
+            val requiresPredictions = c.astFields(0).selections.exists {
+              selection: Selection =>
+                selection
+                  .asInstanceOf[sangria.ast.Field]
+                  .name == "intentPredictions" ||
+                selection
+                  .asInstanceOf[sangria.ast.Field]
+                  .name == "entityPredictions"
+            }
+
+            c.ctx.modelRepo.getUtterances(
+              c.ctx.applicationId.getOrElse(""),
+              c.ctx.versionId.getOrElse(""),
+              c.value.id,
+              requiresPredictions
+            )(c.ctx.authHeader)
+          }
+        )
+      )
+    )
+
   implicit val IntentPredictionType = deriveObjectType[Unit, IntentPrediction]()
 
   implicit val LabelType =
@@ -126,27 +161,7 @@ object ModelSchemaDef {
         )
       )
     )
-  implicit val UtteranceType = deriveObjectType[Unit, Utterance]()
 
-  implicit val IntentType =
-    ObjectType(
-      "Intent",
-      "TODO",
-      fields[MyContext, Intent](
-        Field("id", StringType, resolve = _.value.id),
-        Field("name", StringType, resolve = _.value.name),
-        Field(
-          "utterances",
-          ListType(UtteranceType),
-          resolve = c =>
-            c.ctx.modelRepo.getUtterances(
-              c.ctx.applicationId.getOrElse(""),
-              c.ctx.versionId.getOrElse(""),
-              c.value.id
-            )(c.ctx.authHeader)
-        )
-      )
-    )
 
 }
 

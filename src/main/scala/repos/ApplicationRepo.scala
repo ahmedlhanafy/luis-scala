@@ -33,7 +33,7 @@ class ApplicationRepo(implicit actorSystem: ActorSystem,
     Http()
       .singleRequest(
         HttpRequest(
-          uri = s"$baseUrl/apps?skip=0&take=10",
+          uri = s"$baseUrl/apps?skip=0&take=100",
           headers = authHeader :: Nil
         )
       )

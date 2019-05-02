@@ -6,7 +6,7 @@ import akka.http.scaladsl.model.{HttpHeader, HttpRequest}
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.ActorMaterializer
 import io.circe
-import models.{Entity, Intent, Model, Utterance}
+import models.{Entity, Intent, Model, Utterance, UtterancePrediction}
 import constants.{baseUrl, webApibaseUrl}
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -19,10 +19,13 @@ class ModelRepo(implicit actorSystem: ActorSystem,
     val Intent, Entity = Value
   }
 
-  def getUtterances(applicationId: String, versionId: String, modelId: String)(
-    implicit authHeader: HttpHeader
-  ): Future[List[Utterance]] = {
-    Http()
+  def getUtterances(
+    applicationId: String,
+    versionId: String,
+    modelId: String,
+    withPredictions: Boolean
+  )(implicit authHeader: HttpHeader): Future[List[Utterance]] = {
+    val labelsFuture = Http()
       .singleRequest(
         HttpRequest(
           uri =
@@ -35,6 +38,36 @@ class ModelRepo(implicit actorSystem: ActorSystem,
         case Right(utterances) => utterances
         case Left(e)           => throw e
       }
+
+    val predictionsFuture = Http()
+      .singleRequest(
+        HttpRequest(
+          uri =
+            s"$webApibaseUrl/apps/$applicationId/versions/$versionId/models/$modelId/reviewPredictions?skip=0&take=10",
+          headers = authHeader :: Nil
+        )
+      )
+      .flatMap(Unmarshal(_).to[Either[circe.Error, List[UtterancePrediction]]])
+      .map {
+        case Right(utterances) => utterances
+        case Left(e)           => throw new Exception(e)
+      }
+
+    if (withPredictions) {
+      for {
+        labels <- labelsFuture
+        predictions <- predictionsFuture
+      } yield
+        labels zip predictions map {
+          case (a, b) =>
+            a.copy(
+              alteredText = b.alteredText,
+              intentPredictions = Some(b.intentPredictions),
+              entityPredictions = b.entityPredictions
+            )
+        }
+    } else
+      labelsFuture
   }
 
   def getIntents(applicationId: String, versionId: String)(

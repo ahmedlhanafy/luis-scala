@@ -1,7 +1,9 @@
 import akka.http.scaladsl.model.HttpHeader
 import repos.{ApplicationRepo, ModelRepo}
 
-class MyContext(val authHeader: HttpHeader)(
+case class MyContext(authHeader: HttpHeader,
+                     applicationId: Option[String] = None,
+                     versionId: Option[String] = None)(
   implicit val applicationRepo: ApplicationRepo,
   implicit val modelRepo: ModelRepo
 )

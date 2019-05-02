@@ -2,27 +2,38 @@ import sangria.macros.derive.ObjectTypeDescription
 import sangria.macros.derive._
 import sangria.schema.{
   Argument,
+  Context,
   Field,
   InterfaceType,
   ListType,
   ObjectType,
+  OptionType,
   Schema,
   StringType,
+  UpdateCtx,
   fields
 }
 import models.{
   Application,
   ApplicationEndpoints,
+  ChildEntity,
+  CompositeEntity,
   Endpoint,
   Entity,
   EntityRole,
+  HierarchicalEntity,
   Intent,
+  IntentPrediction,
+  Label,
   ListEntity,
   Model,
   SimpleEntity,
-  Sublist
+  Sublist,
+  Utterance
 }
-import repos.{ApplicationRepo, ModelRepo}
+import sangria.ast.Selection
+
+import scala.concurrent.Future
 
 object SchemaDefinition {
   val QueryType = ObjectType(
@@ -37,7 +48,8 @@ object SchemaDefinition {
         "application",
         ApplicationSchemaDef.ApplicationType,
         arguments = List(Argument("id", StringType)),
-        resolve = c => c.ctx.applicationRepo.getApp(c.arg[String]("id"))(c.ctx.authHeader)
+        resolve = c =>
+          c.ctx.applicationRepo.getApp(c.arg[String]("id"))(c.ctx.authHeader)
       )
     )
   )
@@ -51,6 +63,9 @@ object ModelSchemaDef {
   implicit val EntityRoleType =
     deriveObjectType[Unit, EntityRole]()
 
+  implicit val ChildEntityType =
+    deriveObjectType[Unit, ChildEntity]()
+
   val ModelType = InterfaceType(
     "Model",
     "",
@@ -60,10 +75,7 @@ object ModelSchemaDef {
     )
   )
 
-  val IntentType =
-    deriveObjectType[Unit, Intent](Interfaces(ModelType))
-
-  val EntityType = InterfaceType(
+  implicit val EntityType = InterfaceType(
     "Entity",
     "",
     fields[Unit, Entity](
@@ -73,15 +85,81 @@ object ModelSchemaDef {
     )
   )
 
-  val SimpleEntityType =
+  implicit val SimpleEntityType =
     deriveObjectType[Unit, SimpleEntity](Interfaces(ModelType, EntityType))
 
   val ListEntityType =
     deriveObjectType[Unit, ListEntity](Interfaces(ModelType, EntityType))
 
+  val CompositeEntityType =
+    deriveObjectType[Unit, CompositeEntity](Interfaces(ModelType, EntityType))
+
+  val HierarchicalEntityType =
+    deriveObjectType[Unit, HierarchicalEntity](
+      Interfaces(ModelType, EntityType)
+    )
+
+  implicit val IntentPredictionType = deriveObjectType[Unit, IntentPrediction]()
+
+  implicit val LabelType =
+    deriveObjectType[MyContext, Label](
+      ReplaceField(
+        "entity",
+        Field(
+          "entity",
+          OptionType(EntityType),
+          resolve = c => {
+            val restOfFields = c.astFields(0).selections.filter {
+              selection: Selection =>
+                selection.asInstanceOf[sangria.ast.Field].name != "id" &&
+                selection.asInstanceOf[sangria.ast.Field].name != "name"
+            }
+            if (restOfFields.isEmpty)
+              Some(c.value.entity)
+            else
+              c.ctx.modelRepo.getEntity(
+                c.ctx.applicationId.getOrElse(""),
+                c.ctx.versionId.getOrElse(""),
+                c.value.entity.id
+              )(c.ctx.authHeader)
+          }
+        )
+      )
+    )
+  implicit val UtteranceType = deriveObjectType[Unit, Utterance]()
+
+  implicit val IntentType =
+    ObjectType(
+      "Intent",
+      "TODO",
+      fields[MyContext, Intent](
+        Field("id", StringType, resolve = _.value.id),
+        Field("name", StringType, resolve = _.value.name),
+        Field(
+          "utterances",
+          ListType(UtteranceType),
+          resolve = c =>
+            c.ctx.modelRepo.getUtterances(
+              c.ctx.applicationId.getOrElse(""),
+              c.ctx.versionId.getOrElse(""),
+              c.value.id
+            )(c.ctx.authHeader)
+        )
+      )
+    )
+
 }
 
 object ApplicationSchemaDef {
+  import ModelSchemaDef._
+
+  def updateCtx(c: Context[MyContext, Application]) = {
+    c.ctx.copy(
+      applicationId = Some(c.value.id),
+      versionId = Some(c.value.activeVersion)
+    )(applicationRepo = c.ctx.applicationRepo, modelRepo = c.ctx.modelRepo)
+  }
+
   implicit val EndpointType = deriveObjectType[Unit, Endpoint]()
 
   implicit val ApplicationEndpointsType =
@@ -93,17 +171,29 @@ object ApplicationSchemaDef {
       AddFields(
         Field(
           "intents",
-          ListType(ModelSchemaDef.IntentType),
-          resolve = c =>
-            c.ctx.modelRepo.getIntents(c.value.id, c.value.activeVersion)(c.ctx.authHeader)
+          ListType(IntentType),
+          resolve = (c: Context[MyContext, Application]) =>
+            UpdateCtx(
+              c.ctx.modelRepo
+                .getIntents(c.value.id, c.value.activeVersion)(c.ctx.authHeader)
+            )(_ => updateCtx(c))
         ),
         Field(
           "entities",
-          ListType(ModelSchemaDef.EntityType),
+          ListType(EntityType),
           resolve = c =>
-            c.ctx.modelRepo.getEntities(c.value.id, c.value.activeVersion)(c.ctx.authHeader),
-          possibleTypes =
-            List(ModelSchemaDef.SimpleEntityType, ModelSchemaDef.ListEntityType)
+            UpdateCtx(
+              c.ctx.modelRepo
+                .getEntities(c.value.id, c.value.activeVersion)(
+                  c.ctx.authHeader
+                )
+            )(_ => updateCtx(c)),
+          possibleTypes = List(
+            SimpleEntityType,
+            ListEntityType,
+            CompositeEntityType,
+            HierarchicalEntityType
+          )
         )
       )
     )

@@ -1,5 +1,5 @@
-name := "sangria-akka-http-example"
-version := "0.1.0-SNAPSHOT"
+name := "luis-graphql"
+version := "0.0.1"
 
 description := "An example GraphQL server written with akka-http, circe and sangria."
 
@@ -22,5 +22,11 @@ libraryDependencies ++= Seq(
   "org.scalatest" %% "scalatest" % "3.0.5" % Test
 )
 
+dockerBaseImage := "openjdk:jre-alpine"
+
 Revolver.settings
 enablePlugins(JavaAppPackaging)
+enablePlugins(DockerPlugin)
+enablePlugins(AshScriptPlugin)
+
+//mainClass in Compile := Some("sangria-akka-http-example.Server")

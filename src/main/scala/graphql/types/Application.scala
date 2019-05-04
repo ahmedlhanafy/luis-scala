@@ -1,7 +1,7 @@
 package graphql.types
 
 import graphql.MyContext
-import models.{Application, ApplicationEndpoints, Endpoint}
+import models.{Application, ApplicationEndpoints, Culture, Endpoint}
 import sangria.macros.derive.{
   AddFields,
   ObjectTypeDescription,
@@ -10,6 +10,8 @@ import sangria.macros.derive.{
 import sangria.schema.{
   Argument,
   Context,
+  EnumType,
+  EnumValue,
   Field,
   ListInputType,
   ListType,
@@ -27,20 +29,20 @@ import graphql.types.Model.{
   SimpleEntityType
 }
 import graphql.types.Utterance.UtterancePredictionType
+import graphql.utils.updateCtxWithAppMetaData
 
 object Application {
   val idArgument = Argument("id", StringType)
 
-  def updateCtx(c: Context[MyContext, Application]): MyContext = {
-    c.ctx.copy(
-      applicationId = Some(c.value.id),
-      versionId = Some(c.value.activeVersion)
-    )(
-      applicationRepo = c.ctx.applicationRepo,
-      modelRepo = c.ctx.modelRepo,
-      utteranceRepo = c.ctx.utteranceRepo
+  val CultureEnumType = EnumType(
+    "Culture",
+    values = List(
+      EnumValue("enus", value = Culture.ENUS),
+      EnumValue("zhcn", value = Culture.ZHCN),
+      EnumValue("frfr", value = Culture.FRFR),
+      EnumValue("itit", value = Culture.ITIT),
     )
-  }
+  )
 
   implicit val EndpointType: ObjectType[Unit, Endpoint] =
     deriveObjectType[Unit, Endpoint]()
@@ -48,7 +50,6 @@ object Application {
   implicit val ApplicationEndpointsType
     : ObjectType[Unit, ApplicationEndpoints] =
     deriveObjectType[Unit, ApplicationEndpoints]()
-
 
   val ApplicationType: ObjectType[MyContext, Application] =
     deriveObjectType[MyContext, Application](
@@ -61,7 +62,10 @@ object Application {
             UpdateCtx(
               c.ctx.modelRepo
                 .getIntents(c.value.id, c.value.activeVersion)(c.ctx.authHeader)
-            )(_ => updateCtx(c))
+            )(
+              _ =>
+                updateCtxWithAppMetaData(c, c.value.id, c.value.activeVersion)
+          )
         ),
         Field(
           "entities",
@@ -72,7 +76,10 @@ object Application {
                 .getEntities(c.value.id, c.value.activeVersion)(
                   c.ctx.authHeader
                 )
-            )(_ => updateCtx(c)),
+            )(
+              _ =>
+                updateCtxWithAppMetaData(c, c.value.id, c.value.activeVersion)
+          ),
           possibleTypes = List(
             SimpleEntityType,
             ListEntityType,
@@ -92,7 +99,10 @@ object Application {
                   c.value.activeVersion,
                   c.arg[String]("id")
                 )(c.ctx.authHeader)
-            )(_ => updateCtx(c)),
+            )(
+              _ =>
+                updateCtxWithAppMetaData(c, c.value.id, c.value.activeVersion)
+          ),
           possibleTypes = List(
             SimpleEntityType,
             ListEntityType,
@@ -112,7 +122,10 @@ object Application {
                   c.value.activeVersion,
                   c.arg[String]("id")
                 )(c.ctx.authHeader)
-            )(_ => updateCtx(c)),
+            )(
+              _ =>
+                updateCtxWithAppMetaData(c, c.value.id, c.value.activeVersion)
+          ),
           possibleTypes = List(
             SimpleEntityType,
             ListEntityType,
@@ -132,7 +145,10 @@ object Application {
                   c.value.activeVersion,
                   c.arg[Seq[String]]("utterances")
                 )(c.ctx.authHeader)
-            )(_ => updateCtx(c))
+            )(
+              _ =>
+                updateCtxWithAppMetaData(c, c.value.id, c.value.activeVersion)
+          )
         )
       )
     )

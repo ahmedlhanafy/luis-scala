@@ -4,8 +4,10 @@ import akka.http.scaladsl.model.HttpHeader
 import constants.baseUrl
 import models.{Entity, Intent, Model}
 import services.HttpService
+import io.circe.syntax._
 
 import scala.concurrent.{ExecutionContext, Future}
+import utils.getSuccessfulFutures
 
 class ModelRepo(implicit httpService: HttpService,
                 implicit val executionContext: ExecutionContext) {
@@ -13,6 +15,30 @@ class ModelRepo(implicit httpService: HttpService,
   object ModelType extends Enumeration {
     val Intent, Entity = Value
   }
+
+  def createIntent(applicationId: String, versionId: String, name: String)(
+    implicit authHeader: HttpHeader
+  ): Future[Option[Intent]] = {
+    httpService.post(
+      s"$baseUrl/apps/$applicationId/versions/$versionId/intents",
+      Map("name" -> name).asJson.toString()
+    ) flatMap { getIntent(applicationId, versionId, _) }
+  }
+
+  def deleteIntents(applicationId: String, versionId: String, ids: Seq[String])(
+    implicit authHeader: HttpHeader
+  ): Future[Seq[String]] =
+    getSuccessfulFutures(
+      ids
+        .map(
+          id =>
+            httpService
+              .delete(
+                s"$baseUrl/apps/$applicationId/versions/$versionId/intents/$id/"
+              )
+              .map(_ => id)
+        )
+    )
 
   def get(
     applicationId: String,

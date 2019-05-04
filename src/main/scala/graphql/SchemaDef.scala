@@ -5,12 +5,16 @@ import sangria.schema.{
   Field,
   ListType,
   ObjectType,
+  OptionInputType,
   Schema,
   StringType,
   fields
 }
 import graphql.types.Application.ApplicationType
 import graphql.types.Pagination.{PaginationArgs, paginationArgs}
+import graphql.mutations.ApplicationMutations.ApplicationMutationsType
+import graphql.mutations.IntentMutations.IntentMutationsType
+import graphql.mutations.UtteranceMutations.UtteranceMutationsType
 
 object SchemaDef {
   val QueryType = ObjectType(
@@ -35,5 +39,16 @@ object SchemaDef {
     )
   )
 
-  val schema = Schema(QueryType)
+  val mutationFields
+    : Vector[Field[MyContext, _]] = ApplicationMutationsType.fields ++ IntentMutationsType.fields ++ UtteranceMutationsType.fields
+
+  val MutationsType = ObjectType(
+    "Mutation",
+    fields[MyContext, Unit](
+      mutationFields
+        .asInstanceOf[Seq[Field[MyContext, Unit]]]: _*
+    )
+  )
+
+  val schema = Schema(QueryType, Some(MutationsType))
 }

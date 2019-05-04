@@ -18,7 +18,7 @@ case class Utterance(id: Int,
                      intentPredictions: Option[List[IntentPrediction]],
                      entityPredictions: Option[List[Label]])
 
-case class UtterancePrediction(id: Int,
+case class UtterancePrediction(id: Option[Int],
                                text: Option[String],
                                tokenizedText: Option[List[String]],
                                alteredText: Option[String],
@@ -28,7 +28,7 @@ case class UtterancePrediction(id: Int,
 object UtterancePrediction {
   implicit val decoder: Decoder[UtterancePrediction] = (c: HCursor) =>
     for {
-      id <- c.downField("id").as[Int]
+      id <- c.downField("id").as[Option[Int]]
       text <- c.downField("text").as[Option[String]]
       tokenizedText <- c.downField("tokenizedText").as[Option[List[String]]]
       alteredText <- c.downField("alteredText").as[Option[String]]
@@ -45,12 +45,7 @@ object UtterancePrediction {
         tokenizedText,
         alteredText,
         intentPredictions,
-        entityPredictions map { label =>
-          tokenizedText match {
-            case Some(arr) => Label.populateLabelPhrase(label, arr)
-            case None      => label
-          }
-        },
+        entityPredictions,
     )
 
   implicit val listUnMarshaller
@@ -89,12 +84,14 @@ object Label {
       startTokenIndex <- c.downField("startTokenIndex").as[Int]
       endTokenIndex <- c.downField("endTokenIndex").as[Int]
       entityName <- c.downField("entityName").as[String]
-      roleId <- c.downField("roleId").as[String]
-      roleName <- c.downField("role").as[String]
+      roleId <- c.downField("roleId").as[Option[String]]
+      roleName <- c.downField("role").as[Option[String]]
+      phrase <- c.downField("phrase").as[Option[String]]
     } yield {
       val role = (roleId, roleName) match {
-        case ("", "")     => None
-        case (rId, rName) => Some(EntityRole(rId, rName))
+        case (Some(""), Some(""))     => None
+        case (Some(rId), Some(rName)) => Some(EntityRole(rId, rName))
+        case (_, _)                   => None
       }
 
       Label(
@@ -102,7 +99,7 @@ object Label {
         endTokenIndex,
         SimpleEntity(id, entityName, List.empty),
         role,
-        null
+        phrase orNull
       )
     }
   }
@@ -147,7 +144,7 @@ object Utterance {
         modifiedDateTime,
         alteredText,
         intentPredictions,
-        entityPredictions map { Label.populateLabelPhrase(_, tokenizedText) }
+        entityPredictions
     )
 
   implicit val listUnMarshaller

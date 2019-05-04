@@ -9,6 +9,21 @@ import io.circe
 import io.circe.{Decoder, HCursor, parser}
 import io.circe.generic.auto._
 
+object Culture extends Enumeration {
+  type Culture = Value
+  val ENUS = Value(0, "en-us")
+  val FRFR = Value(1, "fr-fr")
+  val ZHCN = Value(2, "zh-cn")
+  val ITIT = Value(3, "it-it")
+
+  def convert(): String = this match {
+    case ENUS => "en-us"
+    case FRFR => "fr-fr"
+    case ZHCN => "zh-cn"
+    case ITIT => "it-it"
+  }
+}
+
 case class Endpoint(versionId: String,
                     directVersionPublish: Boolean,
                     endpointUrl: String,
@@ -88,9 +103,7 @@ object Application {
     Unmarshaller.byteStringUnmarshaller.map {
       case ByteString.empty ⇒ throw Unmarshaller.NoContentException
       case data ⇒
-        parser.decode[Application](
-          data.decodeString(Charset.forName("UTF-8"))
-        )
+        parser.decode[Application](data.decodeString(Charset.forName("UTF-8")))
     }
 
 }

@@ -35,7 +35,6 @@ object Server extends App with CorsSupport {
   implicit val modelRepo = new ModelRepo()
   implicit val utteranceRepo = new UtteranceRepo()
 
-
   def executeGraphQL(query: Document,
                      operationName: Option[String],
                      variables: Json,

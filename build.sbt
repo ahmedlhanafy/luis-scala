@@ -1,5 +1,5 @@
 name := "luis-graphql"
-version := "0.0.1"
+version := "0.0.2"
 
 description := "An example GraphQL server written with akka-http, circe and sangria."
 
@@ -29,4 +29,3 @@ enablePlugins(JavaAppPackaging)
 enablePlugins(DockerPlugin)
 enablePlugins(AshScriptPlugin)
 
-//mainClass in Compile := Some("sangria-akka-http-example.Server")

@@ -8,16 +8,16 @@ import constants.{baseUrl, webApiBaseUrl}
 import graphql.types.Pagination.PaginationArgs
 import io.circe
 import io.circe.generic.auto._
-import io.circe.generic.semiauto._
 import io.circe.syntax._
 import io.circe.{Encoder, parser}
-import models.{Label, Utterance, UtterancePrediction}
+import models.{Intent, IntentPrediction, Label, Utterance, UtterancePrediction}
 import services.HttpService
 
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
 
 class UtteranceRepo(implicit httpService: HttpService,
+                    implicit val modelRepo: ModelRepo,
                     implicit val executionContext: ExecutionContext) {
 
   case class EntityLabel(startCharIndex: Int,
@@ -26,15 +26,21 @@ class UtteranceRepo(implicit httpService: HttpService,
                          role: Option[String])
 
   case class ExampleResponse(ExampleId: Int, UtteranceText: String)
+  case class ExampleRequest(intentName: String,
+                            text: String,
+                            entityLabels: List[EntityLabel])
 
-  def create(applicationId: String,
-             versionId: String,
-             intentId: String,
-             intentName: String,
-             text: String)(implicit authHeader: HttpHeader): Future[Int] = {
+  def create(
+      applicationId: String,
+      versionId: String,
+      intentId: String,
+      text: String
+  )(implicit authHeader: HttpHeader): Future[Utterance] = {
 
     implicit val exampleResponseEncoder: Encoder[ExampleResponse] =
-      Encoder.forProduct2("ExampleId", "UtteranceText")(e => (e.ExampleId, e.UtteranceText))
+      Encoder.forProduct2("ExampleId", "UtteranceText")(
+        e => (e.ExampleId, e.UtteranceText)
+      )
 
     implicit val stringUnMarshaller
       : Unmarshaller[HttpEntity, Either[circe.Error, ExampleResponse]] = {
@@ -45,65 +51,111 @@ class UtteranceRepo(implicit httpService: HttpService,
       }
     }
 
-    predict(applicationId, versionId, text :: Nil)
-      .map(transformPredictions(_, text))
+    Future
+      .sequence(
+        predict(applicationId, versionId, text :: Nil) :: modelRepo
+          .getIntent(applicationId, versionId, intentId) :: Nil
+      )
+      .map(
+        list =>
+          transformPredictions(
+            list.head.asInstanceOf[List[UtterancePrediction]],
+            text,
+            list(1).asInstanceOf[Option[Intent]]
+        )
+      )
       .flatMap {
-        tuple: Option[(List[String], List[EntityLabel], List[Label])] =>
+        tuple: Option[
+          (List[String],
+           List[EntityLabel],
+           List[Label],
+           List[IntentPrediction],
+           Option[Intent])
+        ] =>
           val entityLabels: List[EntityLabel] = tuple.map(_._2) getOrElse List
             .empty[EntityLabel]
 
-          val entityLabelsEncoder: Encoder[List[EntityLabel]] = deriveEncoder[List[EntityLabel]]
+          val intentName: String = tuple
+            .map(_._5)
+            .flatMap(_.map(_.name))
+            .getOrElse("")
           httpService
-            .post[ExampleResponse](
+            .post[ExampleRequest, ExampleResponse](
               s"$baseUrl/apps/$applicationId/versions/$versionId/example",
-              Map(
-                "intentName" -> intentName,
-                "text" -> text,
-//                "entityLabels" -> entityLabels.asJson(entityLabelsEncoder)
-              ).asJson
+              ExampleRequest(intentName, text, entityLabels)
             )
-            .map(_.ExampleId)
+            .map(
+              res =>
+                Utterance(
+                  res.ExampleId,
+                  res.UtteranceText,
+                  tuple map { _._1 } getOrElse List.empty[String],
+                  None,
+                  "",
+                  "",
+                  None,
+                  tuple map (_._4),
+                  tuple map (_._3)
+              )
+            )
       }
   }
 
   private def transformPredictions(
-    utterancePredictions: List[UtterancePrediction],
-    utteranceText: String
-  ): Option[(List[String], List[EntityLabel], List[Label])] = {
+      utterancePredictions: List[UtterancePrediction],
+      utteranceText: String,
+      intentName: Option[Intent]
+  ): Option[
+    (List[String],
+     List[EntityLabel],
+     List[Label],
+     List[IntentPrediction],
+     Option[Intent])
+  ] = {
     utterancePredictions match {
       case prediction :: _ =>
-        (prediction.tokenizedText, prediction.entityPredictions) match {
-          case (Some(tokenizedText), Some(entityPredictions)) =>
-            val entityLabels = entityPredictions
-              .map(label => {
-                val (startCharIndex, endCharIndex) = tokenToCharIndeces(
-                  (label.startTokenIndex, label.endTokenIndex),
-                  utteranceText,
-                  tokenizedText
-                )
-                EntityLabel(
-                  startCharIndex,
-                  endCharIndex,
-                  label.entity.name,
-                  label.role map { _.name }
-                )
-              })
-            Some(tokenizedText, entityLabels, entityPredictions)
-          case (_, _) => None
+        (
+          prediction.tokenizedText,
+          prediction.entityPredictions,
+          prediction.intentPredictions
+        ) match {
+          case (
+              Some(tokenizedText),
+              Some(entityPredictions),
+              intentPredictions
+              ) =>
+//            val entityLabels = entityPredictions
+//              .map(label => {
+//                val (startCharIndex, endCharIndex) = tokenToCharIndeces(
+//                  (label.startTokenIndex, label.endTokenIndex),
+//                  prediction.text.getOrElse(""),
+//                  tokenizedText
+//                )
+//                EntityLabel(
+//                  startCharIndex,
+//                  endCharIndex,
+//                  label.entity.name,
+//                  label.role map { _.name }
+//                )
+//              })
+            Some(
+              tokenizedText,
+              List.empty,
+              entityPredictions,
+              intentPredictions,
+              intentName
+            )
+          case (_, _, _) => None
         }
     }
   }
 
-//  private def nameMeLater(input: Option[(List[String], List[EntityLabel], List[Label])]): Unit = input match {
-//    case Some((tokenizedText, entityLabels, entityPredictions)) =>
-//  }
-
   def getForModel(
-    applicationId: String,
-    versionId: String,
-    modelId: String,
-    pagination: PaginationArgs,
-    withPredictions: Boolean
+      applicationId: String,
+      versionId: String,
+      modelId: String,
+      pagination: PaginationArgs,
+      withPredictions: Boolean
   )(implicit authHeader: HttpHeader): Future[List[Utterance]] = {
     val labelsFuture = httpService.get[List[Utterance]](
       s"$webApiBaseUrl/apps/$applicationId/versions/$versionId/models/$modelId/reviewLabels?skip=${pagination.skip}&take=${pagination.take}",
@@ -131,7 +183,7 @@ class UtteranceRepo(implicit httpService: HttpService,
   }
 
   def predict(applicationId: String, versionId: String, text: Seq[String])(
-    implicit authHeader: HttpHeader
+      implicit authHeader: HttpHeader
   ): Future[List[UtterancePrediction]] = {
     httpService.post[Seq[String], List[UtterancePrediction]](
       uri =
@@ -157,8 +209,8 @@ class UtteranceRepo(implicit httpService: HttpService,
   }
 
   private def getCharIndexForTokens(
-    text: String,
-    tokenizedText: List[String]
+      text: String,
+      tokenizedText: List[String]
   ): scala.collection.mutable.Map[Int, Int] = {
     val output = scala.collection.mutable.Map[Int, Int]()
     var index = 0

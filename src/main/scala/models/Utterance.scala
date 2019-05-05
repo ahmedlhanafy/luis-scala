@@ -1,7 +1,7 @@
 package models
 
 import java.nio.charset.Charset
-
+import scala.language.postfixOps
 import akka.http.scaladsl.model.HttpEntity
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.ByteString

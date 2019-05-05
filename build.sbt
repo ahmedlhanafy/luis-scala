@@ -1,5 +1,5 @@
 name := "luis-graphql"
-version := "0.0.2"
+version := "0.0.3"
 
 description := "An example GraphQL server written with akka-http, circe and sangria."
 

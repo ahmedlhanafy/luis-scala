@@ -1,7 +1,7 @@
 package graphql.mutations
 
 import graphql.MyContext
-import graphql.types.Model.IntentType
+import graphql.types.Model.{IntentType, EntityType}
 import graphql.utils.updateCtxWithAppMetaData
 import sangria.schema.{
   Argument,
@@ -15,9 +15,10 @@ import sangria.schema.{
   fields
 }
 
-object IntentMutations {
+object ModelMutations {
   val IdsArg = Argument("ids", ListInputType(StringType))
   val NameArg = Argument("name", StringType)
+  val IdArg = Argument("id", StringType)
   val ApplicationIdArg = Argument("applicationId", StringType)
   val VersionIdArg = Argument("versionId", StringType)
 
@@ -33,6 +34,27 @@ object IntentMutations {
             c.ctx.modelRepo.createIntent(
               c.arg(ApplicationIdArg),
               c.arg(VersionIdArg),
+              c.arg(NameArg)
+            )(c.ctx.authHeader)
+          )(
+            _ =>
+              updateCtxWithAppMetaData(
+                c,
+                c.arg(ApplicationIdArg),
+                c.arg(VersionIdArg)
+            )
+        )
+      ),
+      Field(
+        "renameEntity",
+        OptionType(EntityType),
+        arguments = ApplicationIdArg :: VersionIdArg :: IdArg :: NameArg :: Nil,
+        resolve = c =>
+          UpdateCtx(
+            c.ctx.modelRepo.renameEntity(
+              c.arg(ApplicationIdArg),
+              c.arg(VersionIdArg),
+              c.arg(IdArg),
               c.arg(NameArg)
             )(c.ctx.authHeader)
           )(

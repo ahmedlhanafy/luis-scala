@@ -84,10 +84,43 @@ class HttpService(implicit actorSystem: ActorSystem,
             HttpMethods.POST,
             uri = uri,
             headers = authHeader :: Nil,
-            entity = HttpEntity(ContentTypes.`application/json`, data.toString())
+            entity =
+              HttpEntity(ContentTypes.`application/json`, data.toString())
           )
         )
     }
+
+  def put(uri: String, data: String)(implicit authHeader: HttpHeader,
+  ): Future[Unit] =
+    Http()
+      .singleRequest(
+        HttpRequest(
+          HttpMethods.PUT,
+          uri = uri,
+          headers = authHeader :: Nil,
+          entity = HttpEntity(ContentTypes.`application/json`, data)
+        )
+      )
+      .map(Try(_))
+      .flatMap {
+        case Success(res) =>
+          res.status.intValue() match {
+            case 200 | 201 | 203 =>
+              Future.successful()
+            case _ =>
+              Unmarshal(res.entity).to[String].flatMap { body =>
+                Unmarshal(res.entity).to[String].flatMap { body =>
+                  Future.failed(
+                    UserException(
+                      s"The response status is ${res.status} response body is $body"
+                    )
+                  )
+                }
+              }
+          }
+        case Failure(ex) =>
+          Future.failed(ex)
+      }
 
   def delete(uri: String)(implicit authHeader: HttpHeader): Future[Unit] = {
     Http()

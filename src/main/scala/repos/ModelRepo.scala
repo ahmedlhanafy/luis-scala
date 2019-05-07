@@ -40,6 +40,22 @@ class ModelRepo(implicit httpService: HttpService,
         )
     )
 
+  def renameEntity(
+    applicationId: String,
+    versionId: String,
+    id: String,
+    name: String
+  )(implicit authHeader: HttpHeader): Future[Option[Entity]] = {
+    httpService
+      .put(
+        uri = s"$baseUrl/apps/$applicationId/versions/$versionId/entities/$id",
+        Map("name" -> name, "id" -> id).asJson.toString()
+      )
+      .flatMap { _ =>
+        getEntity(applicationId, versionId, id)
+      }
+  }
+
   def get(
     applicationId: String,
     versionId: String,

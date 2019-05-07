@@ -13,7 +13,7 @@ import sangria.schema.{
 import graphql.types.Application.ApplicationType
 import graphql.types.Pagination.{PaginationArgs, paginationArgs}
 import graphql.mutations.ApplicationMutations.ApplicationMutationsType
-import graphql.mutations.IntentMutations.IntentMutationsType
+import graphql.mutations.ModelMutations.IntentMutationsType
 import graphql.mutations.UtteranceMutations.UtteranceMutationsType
 
 object SchemaDef {
